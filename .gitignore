@@ -6,4 +6,5 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .mypy_cache/
+dev_local_run.sh
 
