@@ -1,26 +1,26 @@
-# AI Agent Contract
+# AI Agent 对接契约
 
-This document is the handoff contract between the FastAPI backend and the AI Agent Worker.
+本文档用于说明 FastAPI 后端与 AI Agent Worker 之间的对接约定。
 
-## Architecture
+## 架构说明
 
-Stage 1 uses a task-based pull model:
+第一阶段采用“任务制拉取模型”：
 
 ```text
-Android Frontend -> FastAPI Backend -> AI Agent Worker -> LLM Platform
+Android 前端 -> FastAPI 后端 -> AI Agent Worker -> LLM 平台
 ```
 
-The AI Agent Worker is stateless. It does not store user sessions, conversation memory, API keys, JWTs, passwords, or database credentials. The backend owns conversation storage, task lifecycle, learning path storage, and optional context assembly.
+AI Agent Worker 是无状态模块。它不存储用户 session、对话记忆、API Key、JWT、密码或数据库凭据。会话存储、任务生命周期、学习路径落库，以及可选上下文组装，都由后端负责。
 
-## Backend -> AI: Claim Task
+## 后端 -> AI：领取任务
 
-Endpoint:
+接口：
 
 ```text
 POST /api/v1/backend/tasks/claim
 ```
 
-Request:
+请求示例：
 
 ```json
 {
@@ -31,7 +31,7 @@ Request:
 }
 ```
 
-Task available response:
+有任务时的响应示例：
 
 ```json
 {
@@ -71,7 +71,7 @@ Task available response:
 }
 ```
 
-No task response:
+无任务时的响应示例：
 
 ```json
 {
@@ -81,17 +81,21 @@ No task response:
 }
 ```
 
-`context_json` is optional and backward compatible. The AI worker must work when it is missing. Do not put secrets in `context_json`.
+说明：
 
-## AI -> Backend: Heartbeat
+- `context_json` 是可选字段，并且向后兼容。
+- 后端暂时不传 `context_json` 时，AI Worker 也必须正常工作。
+- `context_json` 只能放学习上下文、历史摘要、路径上下文等非敏感信息，不能放 API Key、JWT、密码、数据库连接串等敏感内容。
 
-Endpoint:
+## AI -> 后端：任务心跳
+
+接口：
 
 ```text
 POST /api/v1/backend/tasks/{task_id}/heartbeat
 ```
 
-Request:
+请求示例：
 
 ```json
 {
@@ -100,17 +104,20 @@ Request:
 }
 ```
 
-Use the same `worker_id` as the claim request. If `BACKEND_CALLBACK_TOKEN` is configured, include `X-Internal-Token`.
+说明：
 
-## AI -> Backend: Success Callback
+- `worker_id` 必须和领取任务时使用的 `worker_id` 保持一致。
+- 如果后端配置了 `BACKEND_CALLBACK_TOKEN`，请求需要携带 `X-Internal-Token`。
 
-Endpoint:
+## AI -> 后端：成功回调
+
+接口：
 
 ```text
 POST /api/v1/callbacks/model-answer
 ```
 
-Request:
+请求示例：
 
 ```json
 {
@@ -141,22 +148,22 @@ Request:
 }
 ```
 
-Rules:
+规则：
 
-- `answer_text` is the JSON string returned by the model.
-- `meta_json.learning_path` is required for learning path persistence.
-- `answer_request_id` should be unique per successful callback for idempotency.
-- If `BACKEND_CALLBACK_TOKEN` is configured, include `X-Internal-Token`.
+- `answer_text` 是模型返回的 JSON 字符串。
+- `meta_json.learning_path` 用于后端解析并持久化学习路径。
+- `answer_request_id` 应尽量保证每次成功回调唯一，用于幂等处理。
+- 如果后端配置了 `BACKEND_CALLBACK_TOKEN`，请求需要携带 `X-Internal-Token`。
 
-## AI -> Backend: Failure Callback
+## AI -> 后端：失败回调
 
-Endpoint:
+接口：
 
 ```text
 POST /api/v1/callbacks/model-failure
 ```
 
-Request:
+请求示例：
 
 ```json
 {
@@ -168,35 +175,35 @@ Request:
 }
 ```
 
-Expected classifications:
+建议错误分类：
 
-| Upstream failure | Error message example |
+| 上游失败类型 | `error_message` 示例 |
 |---|---|
-| 429 / rate limit | `LLM rate limited, retry exhausted` |
-| Timeout | `LLM request timeout` |
-| 5xx / network unavailable | `LLM upstream error` |
-| Invalid JSON | `LLM returned invalid JSON` |
+| 429 / 限流 | `LLM rate limited, retry exhausted` |
+| 超时 | `LLM request timeout` |
+| 5xx / 网络不可用 | `LLM upstream error` |
+| 非法 JSON | `LLM returned invalid JSON` |
 
-Failure callback must mark the backend task as `failed`, not leave it in `running`.
+失败回调后，后端应将任务标记为 `failed`，不能让任务长期停留在 `running`。
 
-## Frontend Handoff Notes
+## 给前端的对接提醒
 
-Frontend should not call the LLM platform directly. Android should call the backend only:
+前端不应该直接调用 LLM 平台。Android 前端只需要调用后端：
 
 - `POST /api/v1/messages/question`
 - `GET /api/v1/tasks/{task_id}/result`
 
-For Android emulator local backend access, use:
+Android 模拟器访问本机后端时，base URL 使用：
 
 ```text
 http://10.0.2.2:8000/api/v1
 ```
 
-Frontend should parse the backend envelope `{code,message,data}`. It should not parse LLM `choices[0].message.content`.
+前端应解析后端统一响应结构 `{code,message,data}`，不要解析 LLM 原始响应里的 `choices[0].message.content`。
 
-## Security Rules
+## 安全规则
 
-- Never commit `.env`.
-- Never hardcode LLM API keys, JWTs, database passwords, or callback tokens.
-- `VIVO_APP_KEY`, `SECRET_KEY`, `DATABASE_URL`, and `BACKEND_CALLBACK_TOKEN` must come from local environment, `.env`, or deployment configuration.
-- Use `AI_MODE=mock` until the local backend + AI runner chain passes.
+- 不要提交 `.env`。
+- 不要硬编码 LLM API Key、JWT、数据库密码或 callback token。
+- `VIVO_APP_KEY`、`SECRET_KEY`、`DATABASE_URL`、`BACKEND_CALLBACK_TOKEN` 必须来自本地环境变量、`.env` 或部署平台配置。
+- 本地联调必须先使用 `AI_MODE=mock`，等后端 + AI runner 链路通过后，再切换真实模型模式。
