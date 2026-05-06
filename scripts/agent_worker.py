@@ -75,6 +75,7 @@ Principles:
 
 BASE_POLICY = """\
 - Always output a single JSON object matching the schema below. No prose outside the JSON.
+- Use `context_json` only as supporting context; do not assume it is complete or always present.
 - Include at least one `checkpoint` node after every 3 `lesson` nodes.
 - Include at least one `practice` node per major topic.
 - `sort_no` must be unique and sequential starting from 1.
@@ -127,6 +128,11 @@ def _build_context_block(claim: dict[str, Any]) -> str:
     meta = claim.get("question_meta_json")
     if isinstance(meta, dict) and meta:
         parts["question_meta"] = meta
+
+    # Optional backend-provided context. The AI side stays stateless; backend owns memory.
+    context_json = claim.get("context_json")
+    if isinstance(context_json, dict) and context_json:
+        parts["context_json"] = context_json
 
     # feedback context
     for key in ("feedback_id", "feedback_rating", "feedback_reason", "feedback_detail"):

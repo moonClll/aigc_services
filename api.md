@@ -52,6 +52,189 @@ POST /api/v1/callbacks/model-failure：回调模型失败信息。
 
 前端业务接口使用 Authorization: Bearer <token>。
 后端接口支持 X-Internal-Token；当配置了 BACKEND_CALLBACK_TOKEN 时会强校验。
+敏感配置说明：SECRET_KEY、DATABASE_URL、BACKEND_CALLBACK_TOKEN、LLM API Key 等只能来自 .env、local environment 或部署平台配置，不应写入前端代码或提交到仓库。
+
+前端提交问题样例
+
+POST /api/v1/messages/question
+
+Headers:
+
+Authorization: Bearer <login_access_token>
+Content-Type: application/json
+
+Request:
+
+```json
+{
+  "conversation_id": 1,
+  "content_text": "我想学习 Python 基础，请生成学习路径",
+  "request_id": "front-req-20260506-0001"
+}
+```
+
+Response:
+
+```json
+{
+  "code": 0,
+  "message": "Question accepted",
+  "data": {
+    "id": 101,
+    "conversation_id": 1,
+    "role": "user",
+    "message_type": "question",
+    "content_text": "我想学习 Python 基础，请生成学习路径",
+    "request_id": "front-req-20260506-0001",
+    "parent_message_id": null,
+    "meta_json": null,
+    "created_at": "2026-05-06T12:00:00",
+    "assets": [],
+    "generation_task_id": 42
+  }
+}
+```
+
+前端轮询任务结果样例
+
+GET /api/v1/tasks/42/result
+
+Headers:
+
+Authorization: Bearer <login_access_token>
+
+Response (未完成):
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "task": {
+      "id": 42,
+      "conversation_id": 1,
+      "status": "running",
+      "error_message": null
+    },
+    "answer_ready": false,
+    "answer_message": null
+  }
+}
+```
+
+Response (已完成):
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "task": {
+      "id": 42,
+      "conversation_id": 1,
+      "status": "success",
+      "error_message": null
+    },
+    "answer_ready": true,
+    "answer_message": {
+      "id": 102,
+      "conversation_id": 1,
+      "role": "assistant",
+      "message_type": "answer",
+      "content_text": "{\"learning_path\":{\"title\":\"Python 入门路径\",\"nodes\":[]}}",
+      "meta_json": {
+        "learning_path": {
+          "title": "Python 入门路径",
+          "goal": "掌握 Python 基础并能完成小练习",
+          "nodes": []
+        }
+      },
+      "assets": []
+    }
+  }
+}
+```
+
+前端注意：这里解析的是后端统一包装结构 `{code,message,data}`，不是 LLM 原始响应中的 `choices[0].message.content`。
+
+AI claim 上下文扩展建议
+
+POST /api/v1/backend/tasks/claim 的响应 data 可以在后续版本增加可选 `context_json`，用于“AI 无状态，后端提供上下文”的一阶段方案：
+
+```json
+{
+  "task_id": 42,
+  "backend_task_id": "job-abc",
+  "conversation_id": 1,
+  "question_message_id": 101,
+  "question_text": "我想学习 Python 基础",
+  "question_meta_json": {
+    "subject": "programming",
+    "level": "beginner"
+  },
+  "context_json": {
+    "history_summary": "用户已了解变量和函数的概念",
+    "path_context": [
+      {
+        "node_id": 1,
+        "title": "编程入门",
+        "question": "如何开始学习编程"
+      }
+    ],
+    "learner_profile": {
+      "level": "beginner",
+      "goal": "完成基础脚本"
+    }
+  },
+  "frontend_request_id": "front-req-20260506-0001"
+}
+```
+
+AI 端必须兼容 `context_json` 缺失。该字段不得包含 API Key、JWT、密码、数据库连接串等敏感信息。
+
+AI 成功回调样例
+
+POST /api/v1/callbacks/model-answer
+
+Headers:
+
+X-Internal-Token: <BACKEND_CALLBACK_TOKEN，如果后端启用>
+Content-Type: application/json
+
+Request:
+
+```json
+{
+  "conversation_id": 1,
+  "generation_task_id": 42,
+  "backend_task_id": "job-abc",
+  "model_name": "Volc-DeepSeek-V3.2",
+  "answer_text": "{\"learning_path\":{\"title\":\"Python 入门路径\",\"nodes\":[]}}",
+  "answer_request_id": "answer-task-42-001",
+  "assets": [],
+  "meta_json": {
+    "learning_path": {
+      "title": "Python 入门路径",
+      "goal": "掌握 Python 基础并能完成小练习",
+      "nodes": []
+    }
+  }
+}
+```
+
+AI 失败回调样例
+
+POST /api/v1/callbacks/model-failure
+
+```json
+{
+  "conversation_id": 1,
+  "generation_task_id": 42,
+  "backend_task_id": "job-abc",
+  "model_name": "Volc-DeepSeek-V3.2",
+  "error_message": "LLM request timeout"
+}
+```
 
 当前版本服务端已具备这些核心功能：
 
