@@ -35,9 +35,18 @@ Copy `.env.example` to `.env`:
 SECRET_KEY=dev-secret-key-change-me
 DATABASE_URL=mysql+pymysql://root:123456@127.0.0.1:3306/learning_app?charset=utf8mb4
 BACKEND_CALLBACK_TOKEN=
+AI_MODE=mock
+VIVO_APP_KEY=
+VIVO_API_URL=https://api-ai.vivo.com.cn/v1/chat/completions
+AI_MODEL=Volc-DeepSeek-V3.2
+AI_TIMEOUT=60
+AI_MAX_RETRIES=3
+AI_WORKER_ID=worker-a
+AI_POLL_INTERVAL=5
 ```
 
 `BACKEND_CALLBACK_TOKEN` is optional. If set, `/api/v1/callbacks/*` must include header `X-Internal-Token`.
+`VIVO_APP_KEY` is required only when `AI_MODE=real`. Do not commit `.env` or hardcode keys.
 
 ## 4. Initialize schema
 
@@ -66,6 +75,40 @@ uvicorn app.main:app --reload
 
 - Health: `GET http://127.0.0.1:8000/healthz`
 - Docs: `http://127.0.0.1:8000/docs`
+
+## 5.1 Start AI Agent Worker
+
+The AI Agent Worker consumes backend tasks and writes results back through callbacks.
+
+Mock mode is the default for local integration and does not call the LLM platform:
+
+```bash
+AI_MODE=mock python scripts/runner.py
+```
+
+Real mode calls the vivo LLM platform and requires `VIVO_APP_KEY` from the environment or `.env`:
+
+```bash
+export VIVO_APP_KEY="your-vivo-key"
+AI_MODE=real python scripts/runner.py
+```
+
+The worker flow is:
+
+```text
+POST /api/v1/backend/tasks/claim
+-> build prompt
+-> mock or real LLM call
+-> POST /api/v1/callbacks/model-answer
+```
+
+If processing fails, the worker calls:
+
+```text
+POST /api/v1/callbacks/model-failure
+```
+
+See `AI_CONTRACT.md` for the backend/AI contract, including optional `context_json`.
 
 ## 6. Core API
 
@@ -332,6 +375,28 @@ Learning path flow smoke test:
 ```bash
 python scripts/learning_path_flow_smoke_test.py
 ```
+
+AI runner mock flow smoke test:
+
+1. Start backend:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+2. In another terminal, start worker:
+
+```bash
+AI_MODE=mock AI_POLL_INTERVAL=1 python scripts/runner.py
+```
+
+3. In a third terminal, verify the end-to-end flow:
+
+```bash
+python scripts/runner_mock_flow_smoke_test.py
+```
+
+Expected output includes `answer_ready=true` and `learning path title`.
 
 ## 8. JSON performance tests (frontend/backend)
 

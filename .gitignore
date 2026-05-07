@@ -1,9 +1,11 @@
 .env
 .venv/
+.DS_Store
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .pytest_cache/
 .mypy_cache/
+dev_local_run.sh
 
