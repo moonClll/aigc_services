@@ -1,25 +1,25 @@
-﻿# Learning App Service (Phase 1 ~ Phase 5)
+# Learning App Service（Phase 1 ~ Phase 5）
 
-This backend now includes:
+当前后端已包含以下功能：
 
-- Phase 1: login, conversation creation, question storage, history query
-- Phase 2: generation task tracking, model answer callback, multi-modal assets
-- Phase 3: task query APIs, model failure callback, user feedback with optional regenerate
-- Phase 4: backend task claim API (backend pulls pending tasks from service)
-- Phase 5: learning path storage, node progress updates, check-ins, conversation event timeline
+* Phase 1：登录、创建会话、问题存储、历史记录查询
+* Phase 2：生成任务跟踪、模型回答回调、多模态资源存储
+* Phase 3：任务查询 API、模型失败回调、用户反馈与可选重新生成
+* Phase 4：后端任务领取 API，即后端从服务端拉取待处理任务
+* Phase 5：学习路径存储、节点进度更新、学习打卡、会话事件时间线
 
-## 1. Prerequisites
+## 1. 环境要求
 
-- Python 3.10+
-- MySQL 8.x
+* Python 3.10+
+* MySQL 8.x
 
-Create database:
+创建数据库：
 
 ```sql
 CREATE DATABASE learning_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-## 2. Install dependencies
+## 2. 安装依赖
 
 ```bash
 python -m venv .venv
@@ -27,9 +27,9 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## 3. Configure environment
+## 3. 配置环境变量
 
-Copy `.env.example` to `.env`:
+将 `.env.example` 复制为 `.env`：
 
 ```env
 SECRET_KEY=dev-secret-key-change-me
@@ -45,78 +45,79 @@ AI_WORKER_ID=worker-a
 AI_POLL_INTERVAL=5
 ```
 
-`BACKEND_CALLBACK_TOKEN` is optional. If set, `/api/v1/callbacks/*` must include header `X-Internal-Token`.
-`VIVO_APP_KEY` is required only when `AI_MODE=real`. Do not commit `.env` or hardcode keys.
+`BACKEND_CALLBACK_TOKEN` 为可选配置。如果设置了该值，则 `/api/v1/callbacks/*` 接口必须在请求头中携带 `X-Internal-Token`。
 
-## 4. Initialize schema
+`VIVO_APP_KEY` 仅在 `AI_MODE=real` 时需要配置。请不要提交 `.env` 文件，也不要在代码中硬编码密钥。
 
-First-time setup:
+## 4. 初始化数据库结构
+
+首次初始化：
 
 ```bash
 python scripts/init_db.py
 ```
 
-Upgrade schema for latest phase:
+升级到最新阶段所需的数据库结构：
 
 ```bash
 python scripts/upgrade_phase2.py
 ```
 
-Demo account:
+演示账号：
 
-- Username: `demo`
-- Password: `Demo@123456`
+* 用户名：`demo`
+* 密码：`Demo@123456`
 
-## 5. Start server
+## 5. 启动服务
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-- Health: `GET http://127.0.0.1:8000/healthz`
-- Docs: `http://127.0.0.1:8000/docs`
+* 健康检查：`GET http://127.0.0.1:8000/healthz`
+* 接口文档：`http://127.0.0.1:8000/docs`
 
-## 5.1 Start AI Agent Worker
+## 5.1 启动 AI Agent Worker
 
-The AI Agent Worker consumes backend tasks and writes results back through callbacks.
+AI Agent Worker 会消费后端任务，并通过回调接口将结果写回服务端。
 
-Mock mode is the default for local integration and does not call the LLM platform:
+Mock 模式是本地联调的默认模式，不会调用真实大模型平台：
 
 ```bash
 AI_MODE=mock python scripts/runner.py
 ```
 
-Real mode calls the vivo LLM platform and requires `VIVO_APP_KEY` from the environment or `.env`:
+Real 模式会调用 vivo 大模型平台，并需要从环境变量或 `.env` 中读取 `VIVO_APP_KEY`：
 
 ```bash
 export VIVO_APP_KEY="your-vivo-key"
 AI_MODE=real python scripts/runner.py
 ```
 
-The worker flow is:
+Worker 的处理流程如下：
 
 ```text
 POST /api/v1/backend/tasks/claim
--> build prompt
--> mock or real LLM call
+-> 构造 prompt
+-> 调用 mock 或真实 LLM
 -> POST /api/v1/callbacks/model-answer
 ```
 
-If processing fails, the worker calls:
+如果处理失败，Worker 会调用：
 
 ```text
 POST /api/v1/callbacks/model-failure
 ```
 
-See `AI_CONTRACT.md` for the backend/AI contract, including optional `context_json`.
+后端与 AI 之间的接口契约请参考 `AI_CONTRACT.md`，其中也包含可选字段 `context_json` 的说明。
 
-## 6. Core API
+## 6. 核心 API
 
-### 6.1 Login
+### 6.1 登录
 
 `POST /api/v1/auth/login`
 
-If account does not exist or password is incorrect, backend returns:
+如果账号不存在或密码错误，后端返回：
 
 ```json
 {
@@ -124,7 +125,7 @@ If account does not exist or password is incorrect, backend returns:
 }
 ```
 
-### 6.2 Register (Frontend)
+### 6.2 注册（前端）
 
 `POST /api/v1/auth/register`
 
@@ -136,18 +137,18 @@ If account does not exist or password is incorrect, backend returns:
 }
 ```
 
-Rules:
+规则：
 
-- `username`: 4-20 chars, starts with a letter, only letters/numbers/underscore
-- `password`: 8-32 chars, must include uppercase + lowercase + digit + special char
+* `username`：长度为 4-20 个字符，必须以字母开头，只允许包含字母、数字和下划线
+* `password`：长度为 8-32 个字符，必须同时包含大写字母、小写字母、数字和特殊字符
 
-If rules fail, backend returns format/rule hints in `detail.rules`.
+如果不符合规则，后端会在 `detail.rules` 中返回格式或规则提示。
 
-### 6.3 Create conversation
+### 6.3 创建会话
 
 `POST /api/v1/conversations`
 
-### 6.4 Submit question
+### 6.4 提交问题
 
 `POST /api/v1/messages/question`
 
@@ -159,25 +160,25 @@ If rules fail, backend returns format/rule hints in `detail.rules`.
 }
 ```
 
-Response `data` includes question message fields plus `generation_task_id`.
+响应中的 `data` 包含问题消息字段，以及 `generation_task_id`。
 
-### 6.5 List history conversation titles (Frontend)
+### 6.5 查询历史会话标题（前端）
 
 `GET /api/v1/conversations/titles`
 
-Returns conversation titles ordered by latest activity time.
+返回按最近活跃时间排序的会话标题列表。
 
-### 6.6 Query conversation messages (Frontend)
+### 6.6 查询会话消息（前端）
 
-Paginated:
+分页查询：
 
 `GET /api/v1/conversations/{conversation_id}/messages?page=1&page_size=20`
 
-All messages in one call:
+一次性查询全部消息：
 
 `GET /api/v1/conversations/{conversation_id}/messages/all`
 
-### 6.7 Model answer callback (Phase 2)
+### 6.7 模型回答回调（Phase 2）
 
 `POST /api/v1/callbacks/model-answer`
 
@@ -211,7 +212,7 @@ All messages in one call:
 }
 ```
 
-### 6.8 Model failure callback (Phase 3)
+### 6.8 模型失败回调（Phase 3）
 
 `POST /api/v1/callbacks/model-failure`
 
@@ -225,7 +226,7 @@ All messages in one call:
 }
 ```
 
-### 6.9 Submit feedback (Phase 3)
+### 6.9 提交反馈（Phase 3）
 
 `POST /api/v1/messages/{message_id}/feedback`
 
@@ -239,22 +240,24 @@ All messages in one call:
 }
 ```
 
-If `regenerate=true`, response includes `regenerate_task_id`.
-The regenerate task carries feedback metadata and can overwrite the old answer on callback.
-If frontend retries the same feedback `request_id`, backend keeps idempotency and returns the same `regenerate_task_id`.
+如果 `regenerate=true`，响应中会包含 `regenerate_task_id`。
 
-### 6.10 Query tasks (Phase 3)
+重新生成任务会携带反馈元数据，并且可以在回调时覆盖旧回答。
 
-- `GET /api/v1/tasks/{task_id}`
-- `GET /api/v1/tasks?conversation_id=1&status=pending&page=1&page_size=20`
+如果前端使用相同的 `request_id` 重试同一条反馈，后端会保持幂等性，并返回相同的 `regenerate_task_id`。
 
-Task details now include:
+### 6.10 查询任务（Phase 3）
 
-- `answer_message_id`: direct mapping to the final answer message for this task
+* `GET /api/v1/tasks/{task_id}`
+* `GET /api/v1/tasks?conversation_id=1&status=pending&page=1&page_size=20`
 
-Each message payload includes `assets`.
+任务详情现在包含：
 
-### 6.11 Backend claim task (Phase 4)
+* `answer_message_id`：该任务对应的最终回答消息 ID
+
+每条消息的响应体中都包含 `assets`。
+
+### 6.11 后端领取任务（Phase 4）
 
 `POST /api/v1/backend/tasks/claim`
 
@@ -268,25 +271,26 @@ Each message payload includes `assets`.
 }
 ```
 
-If a task is available, backend receives question payload and task IDs.  
-If no task is available, response `data` is `null` and message is `No pending task`.
+如果存在可领取任务，后端会收到问题内容和任务 ID。
 
-When task comes from feedback regenerate, claim response also includes:
+如果当前没有可领取任务，响应中的 `data` 为 `null`，并且 `message` 为 `No pending task`。
 
-- `replace_answer_message_id`
-- `feedback_id`
-- `feedback_rating`
-- `feedback_reason`
-- `feedback_detail`
+当任务来自反馈后的重新生成时，领取任务的响应中还会包含：
 
-Backend can use these fields to regenerate answer with feedback context.
+* `replace_answer_message_id`
+* `feedback_id`
+* `feedback_rating`
+* `feedback_reason`
+* `feedback_detail`
 
-The claim API supports stale lease re-claiming:
+后端可以使用这些字段，结合反馈上下文重新生成回答。
 
-- pending tasks can be claimed normally
-- running tasks with expired `lease_expires_at` can be re-claimed
+任务领取 API 支持过期租约的重新领取：
 
-### 6.12 Backend heartbeat (Phase 4)
+* `pending` 状态的任务可以正常领取
+* `running` 状态且 `lease_expires_at` 已过期的任务可以被重新领取
+
+### 6.12 后端心跳（Phase 4）
 
 `POST /api/v1/backend/tasks/{task_id}/heartbeat`
 
@@ -297,135 +301,135 @@ The claim API supports stale lease re-claiming:
 }
 ```
 
-This extends task lease while backend is still generating.
+该接口用于在后端仍在生成时延长任务租约。
 
-### 6.13 Frontend task result polling (Phase 4+)
+### 6.13 前端轮询任务结果（Phase 4+）
 
 `GET /api/v1/tasks/{task_id}/result`
 
-Response includes:
+响应包含：
 
-- `task`: full task status
-- `answer_ready`: whether answer is available
-- `answer_message`: final answer payload (includes assets) when task succeeds
+* `task`：完整任务状态
+* `answer_ready`：回答是否已经可用
+* `answer_message`：任务成功时的最终回答内容，包含 `assets`
 
-This endpoint is designed for frontend polling after submit/regenerate.
+该接口设计用于前端在提交问题或重新生成后轮询任务结果。
 
-### 6.14 Learning path APIs (Phase 5)
+### 6.14 学习路径 API（Phase 5）
 
-When `POST /api/v1/callbacks/model-answer` includes `meta_json.learning_path`, backend stores a versioned learning path and nodes.
+当 `POST /api/v1/callbacks/model-answer` 的 `meta_json` 中包含 `learning_path` 时，后端会存储带版本号的学习路径和路径节点。
 
-Frontend APIs:
+前端 API：
 
-- `GET /api/v1/learning-paths/conversations/{conversation_id}/current`
-- `GET /api/v1/learning-paths/{path_id}`
-- `PATCH /api/v1/learning-paths/{path_id}/nodes/{node_id}/state`
-- `POST /api/v1/learning-paths/{path_id}/checkins`
-- `GET /api/v1/learning-paths/{path_id}/progress`
-- `GET /api/v1/learning-paths/conversations/{conversation_id}/events`
+* `GET /api/v1/learning-paths/conversations/{conversation_id}/current`
+* `GET /api/v1/learning-paths/{path_id}`
+* `PATCH /api/v1/learning-paths/{path_id}/nodes/{node_id}/state`
+* `POST /api/v1/learning-paths/{path_id}/checkins`
+* `GET /api/v1/learning-paths/{path_id}/progress`
+* `GET /api/v1/learning-paths/conversations/{conversation_id}/events`
 
-Each node state/check-in update writes a conversation event record for timeline replay.
+每次节点状态更新或学习打卡都会写入一条会话事件记录，用于时间线回放。
 
-## 7. Smoke tests
+## 7. 冒烟测试
 
-Phase 1 smoke test:
+Phase 1 冒烟测试：
 
 ```bash
 python scripts/phase1_smoke_test.py
 ```
 
-Phase 2 smoke test:
+Phase 2 冒烟测试：
 
 ```bash
 python scripts/phase2_smoke_test.py
 ```
 
-Phase 3 smoke test:
+Phase 3 冒烟测试：
 
 ```bash
 python scripts/phase3_smoke_test.py
 ```
 
-Frontend flow smoke test (register/login/history/messages):
+前端流程冒烟测试，包括注册、登录、历史记录和消息查询：
 
 ```bash
 python scripts/frontend_flow_smoke_test.py
 ```
 
-Backend claim flow smoke test:
+后端任务领取流程冒烟测试：
 
 ```bash
 python scripts/backend_claim_flow_smoke_test.py
 ```
 
-Feedback regenerate overwrite smoke test:
+反馈重新生成并覆盖旧回答的冒烟测试：
 
 ```bash
 python scripts/feedback_regenerate_overwrite_smoke_test.py
 ```
 
-Task result polling smoke test:
+任务结果轮询冒烟测试：
 
 ```bash
 python scripts/task_result_polling_smoke_test.py
 ```
 
-Learning path flow smoke test:
+学习路径流程冒烟测试：
 
 ```bash
 python scripts/learning_path_flow_smoke_test.py
 ```
 
-AI runner mock flow smoke test:
+AI runner mock 流程冒烟测试：
 
-1. Start backend:
+1. 启动后端：
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-2. In another terminal, start worker:
+2. 在另一个终端启动 Worker：
 
 ```bash
 AI_MODE=mock AI_POLL_INTERVAL=1 python scripts/runner.py
 ```
 
-3. In a third terminal, verify the end-to-end flow:
+3. 在第三个终端验证端到端流程：
 
 ```bash
 python scripts/runner_mock_flow_smoke_test.py
 ```
 
-Expected output includes `answer_ready=true` and `learning path title`.
+预期输出中应包含 `answer_ready=true` 和 `learning path title`。
 
-## 8. JSON performance tests (frontend/backend)
+## 8. JSON 性能测试（前端 / 后端）
 
-Frontend JSON write-path perf test:
+前端 JSON 写入路径性能测试：
 
 ```bash
 python scripts/perf_frontend_json_flow.py --requests 500 --concurrency 50 --conversation-shards 50
 ```
 
-Backend JSON callback write-path perf test:
+后端 JSON 回调写入路径性能测试：
 
 ```bash
 python scripts/perf_backend_json_flow.py --requests 500 --concurrency 50 --conversation-shards 50
 ```
 
-If callback token is enabled, pass:
+如果启用了回调 token，请传入：
 
 ```bash
 python scripts/perf_backend_json_flow.py --internal-token your_token_here
 ```
 
-Both scripts print throughput (RPS), average latency, P95 latency, success/failure count, and show JSON payload templates used in the test.
+两个脚本都会打印吞吐量（RPS）、平均延迟、P95 延迟、成功 / 失败数量，并展示测试中使用的 JSON 请求模板。
 
-## 9. Troubleshooting Chinese text
+## 9. 中文乱码排查
 
-If Chinese text appears as `????`, run:
+如果中文显示为 `????`，请执行：
 
 ```sql
 source scripts/fix_mysql_utf8mb4.sql;
 ```
 
-If issue appears only in PowerShell manual requests, use Unicode escapes (`\u8bf7...`) in JSON or run the smoke test scripts.
+如果问题只出现在 PowerShell 手动请求中，可以在 JSON 中使用 Unicode 转义，例如 `\u8bf7...`，或者直接运行冒烟测试脚本。
