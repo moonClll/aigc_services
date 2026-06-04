@@ -4,4 +4,4 @@ SQLAlchemy==2.0.38
 PyMySQL==1.1.1
 pydantic-settings==2.8.1
 PyJWT==2.10.1
-
+cryptography==47.0.0
