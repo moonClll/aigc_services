@@ -11,6 +11,19 @@ from app.core.database import engine
 from app.models import Base
 
 
+def _ensure_user_columns() -> None:
+    inspector = inspect(engine)
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    statements: list[str] = []
+
+    if "avatar_url" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512) NULL;")
+
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def _ensure_generation_task_columns() -> None:
     inspector = inspect(engine)
     columns = {col["name"] for col in inspector.get_columns("generation_tasks")}
@@ -113,6 +126,7 @@ def _ensure_generation_task_indexes() -> None:
 
 def main() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_user_columns()
     _ensure_generation_task_columns()
     _ensure_generation_task_indexes()
     print("Latest schema upgrade finished.")

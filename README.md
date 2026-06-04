@@ -98,6 +98,7 @@ Rules:
 - `username`: 4-20 chars, starts with a letter, only letters/numbers/underscore
 - `password`: 8-32 chars, must include uppercase + lowercase + digit + special char
 
+New users will automatically receive a mock `display_name` and `avatar_url`, and login response will return both fields.
 If rules fail, backend returns format/rule hints in `detail.rules`.
 
 ### 6.3 Create conversation

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.mock_user_profile import pick_mock_user_profile
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.response import ok
@@ -43,6 +44,21 @@ def _validate_register_payload(payload: RegisterRequest) -> list[str]:
     return errors
 
 
+def _apply_mock_profile(user: User) -> None:
+    profile = pick_mock_user_profile(user.username)
+    user.display_name = profile["display_name"]
+    user.avatar_url = profile["avatar_url"]
+
+
+def _ensure_user_mock_profile(user: User, db: Session) -> None:
+    if user.display_name and user.avatar_url:
+        return
+    _apply_mock_profile(user)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+
 @router.post("/register")
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
     rules_errors = _validate_register_payload(payload)
@@ -65,9 +81,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
     user = User(
         username=payload.username,
         password_hash=hash_password(payload.password),
-        display_name=(payload.display_name or payload.username).strip(),
         status="active",
     )
+    _apply_mock_profile(user)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -89,6 +105,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
             detail="\u8d26\u6237\u6216\u5bc6\u7801\u9519\u8bef",
         )
 
+    _ensure_user_mock_profile(user, db)
     token = create_access_token(str(user.id))
     profile = UserProfile.model_validate(user)
     data = LoginData(
@@ -97,4 +114,3 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
         user=profile,
     )
     return ok(data.model_dump(), "Login success")
-

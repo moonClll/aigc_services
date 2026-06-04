@@ -16,6 +16,7 @@ class UserProfile(BaseModel):
     id: int
     username: str
     display_name: str | None
+    avatar_url: str | None
     status: str
 
     model_config = ConfigDict(from_attributes=True)
