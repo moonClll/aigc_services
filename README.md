@@ -1,25 +1,29 @@
 # 学习类应用服务端
 
-这是一个基于 `FastAPI + MySQL` 的服务端项目，主要负责连接前端与后端大模型服务，完成以下工作：
+这是一个基于 `FastAPI + MySQL` 的服务端项目，负责连接前端与 AI 端，完成用户、会话、消息、任务、学习路径和学习进度的存储与流转。
 
-- 用户注册、登录与身份校验
-- 会话创建、历史会话查询、消息存储
-- 前端提问入库，并生成后端待处理任务
-- 后端领取任务、回调答案、回调失败信息
-- 用户对回答进行反馈，并触发重新生成
-- 学习路径、节点进度、打卡记录、事件时间线存储
-- 多模态内容存储，如文本、图片、思维导图等
+当前项目已经从“AI 端主动来领取任务”的单一拉模式，扩展为：
 
-当前项目已经实现到“学习路径与打卡”这一阶段，适合作为学习类 AI 应用的服务端原型和开发基础。
+- 主模式：服务端创建任务后，主动把任务推送给 AI 端
+- 兼容模式：AI 端仍然可以通过 `claim` 接口主动领取任务
 
-## 1. 当前功能概览
+这样做的好处是：
 
-- 第一阶段：注册、登录、会话创建、问题入库、历史会话查询
-- 第二阶段：生成任务跟踪、模型答案回调、多模态资产存储
-- 第三阶段：任务查询、失败回调、回答反馈、可选重答
-- 第四阶段：后端主动领取任务、任务续租、过期任务重领
-- 第五阶段：学习路径落库、节点状态更新、打卡记录、会话事件时间线
-- 用户扩展：新注册用户自动分配 mock 名字与头像，登录时一并返回
+- 前端提交问题后，服务端可以立即触发 AI 处理，不必等 AI 端轮询
+- AI 服务暂时不支持主动接收时，旧的领取模式也还能继续工作
+- 推送失败时，任务不会直接丢失，仍可保留给后续补发或领取处理
+
+## 1. 当前功能
+
+- 用户注册、登录、JWT 鉴权
+- 新用户自动分配 mock 名字与头像，登录时返回
+- 会话创建、历史会话标题查询、消息查询
+- 前端提问入库、反馈入库、重答任务创建
+- 任务状态管理：`pending / running / success / failed`
+- 服务端主动推送任务到 AI 端
+- AI 端主动领取任务作为兜底方案
+- AI 答案回调、失败回调、多模态资产存储
+- 学习路径、节点状态、打卡记录、会话事件时间线
 
 ## 2. 环境要求
 
@@ -32,9 +36,7 @@
 CREATE DATABASE learning_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-## 3. 安装与配置
-
-安装依赖：
+## 3. 安装依赖
 
 ```bash
 python -m venv .venv
@@ -42,20 +44,36 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-配置环境变量，将 `.env.example` 复制为 `.env`，至少包含：
+## 4. 环境变量配置
+
+将 `.env.example` 复制为 `.env`，至少配置以下内容：
 
 ```env
 SECRET_KEY=dev-secret-key-change-me
 DATABASE_URL=mysql+pymysql://root:123456@127.0.0.1:3306/learning_app?charset=utf8mb4
 BACKEND_CALLBACK_TOKEN=
+BACKEND_TASK_LEASE_SECONDS=300
+AI_SERVICE_PROCESS_URL=
+AI_SERVICE_TOKEN=
+AI_SERVICE_TIMEOUT_SECONDS=120
+AI_SERVICE_MODEL_NAME=local-ai-service
 ```
+
+字段说明：
+
+- `DATABASE_URL`：MySQL 连接地址
+- `BACKEND_CALLBACK_TOKEN`：后端内部接口校验令牌；如果配置了，访问 `/api/v1/backend/*` 和 `/api/v1/callbacks/*` 时必须带 `X-Internal-Token`
+- `AI_SERVICE_PROCESS_URL`：AI 服务处理入口，例如 `http://127.0.0.1:8100/ai/process`
+- `AI_SERVICE_TOKEN`：服务端主动推送到 AI 服务时携带的内部令牌
+- `AI_SERVICE_TIMEOUT_SECONDS`：主动推送请求超时时间
+- `AI_SERVICE_MODEL_NAME`：服务端记录用的模型/服务名称
 
 说明：
 
-- `DATABASE_URL`：MySQL 连接地址
-- `BACKEND_CALLBACK_TOKEN`：后端内部接口校验令牌，可为空；如果设置了，访问 `/api/v1/backend/*` 和 `/api/v1/callbacks/*` 时需要传 `X-Internal-Token`
+- 如果 `AI_SERVICE_PROCESS_URL` 为空，服务端不会主动推送任务
+- 这时仍然可以使用旧的 `claim` 模式由 AI 端来领取任务
 
-## 4. 数据库初始化
+## 5. 数据库初始化
 
 首次初始化：
 
@@ -69,14 +87,14 @@ python scripts/init_db.py
 python scripts/upgrade_phase2.py
 ```
 
-初始化脚本会创建一个演示账号：
+初始化脚本会创建 demo 账号：
 
 - 用户名：`demo`
 - 密码：`Demo@123456`
 
-如果该账号缺少 mock 名字或头像，初始化脚本也会自动补齐。
+如果 demo 用户缺少 mock 头像或名字，初始化时也会自动补齐。
 
-## 5. 启动服务
+## 6. 启动服务
 
 ```bash
 uvicorn app.main:app --reload
@@ -87,242 +105,178 @@ uvicorn app.main:app --reload
 - 健康检查：`GET http://127.0.0.1:8000/healthz`
 - Swagger 文档：`http://127.0.0.1:8000/docs`
 
-## 6. 项目文件组织架构
+## 7. 当前任务流转方式
 
-下面是当前项目中最重要的文件结构：
+### 7.1 主动推送模式
+
+当前主推荐流程如下：
+
+1. 前端提交问题到 `POST /api/v1/messages/question`
+2. 服务端保存问题，并创建 `generation_task`
+3. 服务端异步触发主动分发器
+4. 分发器把任务推送到 `AI_SERVICE_PROCESS_URL`
+5. AI 服务处理后：
+   - 如果同步返回成功结果，服务端直接落库答案
+   - 如果只是返回已接收，服务端等待 AI 端后续调用回调接口
+6. 前端通过 `GET /api/v1/tasks/{task_id}/result` 轮询结果
+
+### 7.2 兼容领取模式
+
+如果 AI 服务仍按旧方案工作，也可以继续使用：
+
+- `POST /api/v1/backend/tasks/claim`
+- `POST /api/v1/backend/tasks/{task_id}/heartbeat`
+
+也就是说：
+
+- 新模式适合“服务端主动把任务发给 AI 端”
+- 旧模式适合“AI 端自己定时拉取任务”
+
+两种模式现在是兼容共存的。
+
+## 8. 项目文件组织架构
 
 ```text
 D:\aigc
 ├─ app
-│  ├─ main.py                       # FastAPI 入口
+│  ├─ main.py
 │  ├─ api
-│  │  ├─ router.py                 # 总路由注册
-│  │  ├─ deps.py                   # 前端鉴权依赖
-│  │  ├─ internal_auth.py          # 后端内部接口鉴权
-│  │  ├─ serializers.py            # 消息序列化
+│  │  ├─ router.py
+│  │  ├─ deps.py
+│  │  ├─ internal_auth.py
+│  │  ├─ serializers.py
 │  │  └─ routes
-│  │     ├─ auth.py                # 注册、登录
-│  │     ├─ conversations.py       # 会话与历史消息
-│  │     ├─ messages.py            # 提问、反馈
-│  │     ├─ tasks.py               # 任务查询、任务结果轮询
-│  │     ├─ backend.py             # 后端领取任务、任务续租
-│  │     ├─ callbacks.py           # 模型答案/失败回调
-│  │     └─ learning.py            # 学习路径、打卡、进度、事件
+│  │     ├─ auth.py
+│  │     ├─ conversations.py
+│  │     ├─ messages.py
+│  │     ├─ tasks.py
+│  │     ├─ backend.py
+│  │     ├─ callbacks.py
+│  │     └─ learning.py
 │  ├─ core
-│  │  ├─ config.py                 # 配置读取
-│  │  ├─ database.py               # 数据库连接
-│  │  ├─ response.py               # 统一响应格式
-│  │  ├─ security.py               # JWT、密码哈希
-│  │  └─ mock_user_profile.py      # mock 用户名字与头像分配
+│  │  ├─ config.py
+│  │  ├─ database.py
+│  │  ├─ response.py
+│  │  ├─ security.py
+│  │  ├─ mock_user_profile.py
+│  │  ├─ ai_dispatcher.py
+│  │  └─ task_result_service.py
 │  ├─ models
-│  │  ├─ user.py                   # 用户表
-│  │  ├─ conversation.py           # 会话表
-│  │  ├─ message.py                # 消息表
-│  │  ├─ message_asset.py          # 消息多模态资产表
-│  │  ├─ generation_task.py        # 生成任务表
-│  │  ├─ feedback.py               # 回答反馈表
-│  │  ├─ learning_path.py          # 学习路径表
-│  │  ├─ learning_node.py          # 学习节点表
-│  │  ├─ learning_node_state.py    # 学习节点状态表
-│  │  ├─ learning_checkin.py       # 打卡记录表
-│  │  └─ conversation_event.py     # 会话事件时间线表
+│  │  ├─ user.py
+│  │  ├─ conversation.py
+│  │  ├─ message.py
+│  │  ├─ message_asset.py
+│  │  ├─ generation_task.py
+│  │  ├─ feedback.py
+│  │  ├─ learning_path.py
+│  │  ├─ learning_node.py
+│  │  ├─ learning_node_state.py
+│  │  ├─ learning_checkin.py
+│  │  └─ conversation_event.py
 │  └─ schemas
-│     ├─ auth.py                   # 认证请求/响应模型
-│     ├─ conversation.py           # 会话请求/响应模型
-│     ├─ message.py                # 消息与回调模型
-│     ├─ task.py                   # 任务与反馈模型
-│     └─ learning.py               # 学习路径与打卡模型
+│     ├─ auth.py
+│     ├─ conversation.py
+│     ├─ message.py
+│     ├─ task.py
+│     └─ learning.py
 ├─ scripts
-│  ├─ init_db.py                   # 初始化数据库与 demo 用户
-│  ├─ upgrade_phase2.py            # 数据库升级脚本
-│  ├─ phase1_smoke_test.py         # 第一阶段冒烟测试
-│  ├─ phase2_smoke_test.py         # 第二阶段冒烟测试
-│  ├─ phase3_smoke_test.py         # 第三阶段冒烟测试
-│  ├─ frontend_flow_smoke_test.py  # 前端流程测试
+│  ├─ init_db.py
+│  ├─ upgrade_phase2.py
+│  ├─ phase1_smoke_test.py
+│  ├─ phase2_smoke_test.py
+│  ├─ phase3_smoke_test.py
+│  ├─ frontend_flow_smoke_test.py
 │  ├─ backend_claim_flow_smoke_test.py
 │  ├─ feedback_regenerate_overwrite_smoke_test.py
 │  ├─ task_result_polling_smoke_test.py
 │  ├─ learning_path_flow_smoke_test.py
-│  ├─ perf_frontend_json_flow.py   # 前端写入压测
-│  ├─ perf_backend_json_flow.py    # 后端回调压测
-│  ├─ agent_worker.py              # 简单任务 worker
-│  ├─ llm_client.py                # LLM 调用封装
-│  ├─ runner.py                    # 运行入口脚本
-│  └─ runner_mock_flow_smoke_test.py
-├─ .env                            # 本地环境配置
-├─ .env.example                    # 环境变量示例
-├─ AI_CONTRACT.md                  # AI 协议说明
-├─ api.md                          # 接口文档草稿
-├─ requirements.txt                # Python 依赖
-└─ README.md                       # 项目说明
+│  ├─ ai_bridge_local_smoke_test.py
+│  ├─ ai_bridge_worker_once.py
+│  ├─ ai_bridge_db_verify.py
+│  ├─ perf_frontend_json_flow.py
+│  └─ perf_backend_json_flow.py
+├─ .env
+├─ .env.example
+├─ api.md
+├─ requirements.txt
+└─ README.md
 ```
 
-如果你后面要继续开发，最常用的入口文件通常是：
+最常用的入口文件：
 
 - 服务启动入口：[main.py](/D:/aigc/app/main.py)
 - 总路由入口：[router.py](/D:/aigc/app/api/router.py)
-- 认证接口：[auth.py](/D:/aigc/app/api/routes/auth.py)
-- 消息接口：[messages.py](/D:/aigc/app/api/routes/messages.py)
-- 学习路径接口：[learning.py](/D:/aigc/app/api/routes/learning.py)
+- 消息入口：[messages.py](/D:/aigc/app/api/routes/messages.py)
+- 主动推送逻辑：[ai_dispatcher.py](/D:/aigc/app/core/ai_dispatcher.py)
+- 回调入库逻辑：[task_result_service.py](/D:/aigc/app/core/task_result_service.py)
 
-## 7. 核心接口说明
+## 9. 核心接口说明
 
 项目业务接口统一前缀为：`/api/v1`
 
-### 7.1 认证接口
+### 9.1 认证接口
 
-#### 登录
-
-`POST /api/v1/auth/login`
-
-成功返回示例：
-
-```json
-{
-  "code": 0,
-  "message": "Login success",
-  "data": {
-    "access_token": "your-jwt-token",
-    "token_type": "bearer",
-    "expires_in": 86400,
-    "user": {
-      "id": 1,
-      "username": "demo",
-      "display_name": "Luna Reed",
-      "avatar_url": "https://api.dicebear.com/9.x/adventurer/svg?seed=LunaReed",
-      "status": "active"
-    }
-  }
-}
-```
-
-如果账号不存在或密码错误，返回：
-
-```json
-{
-  "detail": "\\u8d26\\u6237\\u6216\\u5bc6\\u7801\\u9519\\u8bef"
-}
-```
-
-#### 注册
-
-`POST /api/v1/auth/register`
-
-请求示例：
-
-```json
-{
-  "username": "Alice_001",
-  "password": "StrongPass@123",
-  "display_name": "Alice"
-}
-```
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
 
 说明：
 
-- `display_name` 当前保留为兼容字段
-- 新用户注册后，服务端会自动按用户名从 mock 资料池中分配 `display_name` 和 `avatar_url`
-- 注册返回、登录返回都会包含这两个字段
+- 新注册用户会自动获得 mock `display_name` 和 `avatar_url`
+- 登录返回的 `user` 中会包含这两个字段
 
-格式规则：
+### 9.2 会话接口
 
-- `username`：4 到 20 位，必须字母开头，只允许字母、数字、下划线
-- `password`：8 到 32 位，必须同时包含大写字母、小写字母、数字、特殊字符
+- `POST /api/v1/conversations`
+- `GET /api/v1/conversations`
+- `GET /api/v1/conversations/titles`
+- `GET /api/v1/conversations/{conversation_id}/messages`
+- `GET /api/v1/conversations/{conversation_id}/messages/all`
 
-### 7.2 会话接口
+### 9.3 消息接口
 
-- `POST /api/v1/conversations`：创建会话
-- `GET /api/v1/conversations`：分页查询会话列表
-- `GET /api/v1/conversations/titles`：按最近时间返回历史会话标题
-- `GET /api/v1/conversations/{conversation_id}/messages`：分页查询会话消息
-- `GET /api/v1/conversations/{conversation_id}/messages/all`：查询会话全部消息
-
-### 7.3 消息接口
-
-#### 提交问题
-
-`POST /api/v1/messages/question`
-
-```json
-{
-  "conversation_id": 1,
-  "content_text": "Please explain Newton's second law",
-  "request_id": "req-20260422-0001"
-}
-```
-
-成功后会：
-
-- 保存用户问题到 `messages`
-- 创建一条待处理任务到 `generation_tasks`
-- 返回 `generation_task_id`
-
-#### 提交反馈
-
-`POST /api/v1/messages/{message_id}/feedback`
-
-```json
-{
-  "rating": "dislike",
-  "reason": "not clear",
-  "detail": "need simpler explanation",
-  "request_id": "feedback-req-001",
-  "regenerate": true
-}
-```
+- `POST /api/v1/messages/question`
+- `POST /api/v1/messages/{message_id}/feedback`
 
 说明：
 
-- `regenerate=true` 时会创建新的重答任务
-- 重答成功后可以覆盖旧答案
-- 同一个 `request_id` 重复提交时，会按幂等逻辑返回同一个结果
+- 创建问题任务后，服务端会自动尝试主动推送到 AI 端
+- 反馈重答任务也会自动尝试主动推送
 
-### 7.4 任务接口
+### 9.4 任务接口
 
-- `GET /api/v1/tasks/{task_id}`：查询任务详情
-- `GET /api/v1/tasks/{task_id}/result`：查询任务状态和最终答案
-- `GET /api/v1/tasks?conversation_id=1&status=pending&page=1&page_size=20`：分页查询任务
+- `GET /api/v1/tasks/{task_id}`
+- `GET /api/v1/tasks/{task_id}/result`
+- `GET /api/v1/tasks?conversation_id=1&status=pending&page=1&page_size=20`
 
-其中 `GET /api/v1/tasks/{task_id}/result` 的返回里会包含：
+其中 `GET /api/v1/tasks/{task_id}/result` 会返回：
 
-- `task`：任务本身的状态
-- `answer_ready`：答案是否已生成
-- `answer_message`：生成成功后的最终答案
+- `task`
+- `answer_ready`
+- `answer_message`
 
-### 7.5 后端任务分发接口
+### 9.5 后端任务接口
 
-- `POST /api/v1/backend/tasks/claim`：后端领取待处理任务
-- `POST /api/v1/backend/tasks/{task_id}/heartbeat`：任务处理中的续租心跳
+- `POST /api/v1/backend/tasks/claim`
+- `POST /api/v1/backend/tasks/{task_id}/heartbeat`
+- `POST /api/v1/backend/tasks/{task_id}/dispatch`
 
 说明：
 
-- 支持 `pending` 任务正常领取
-- 支持处理超时的 `running` 任务重新领取
-- 重答任务会额外带上反馈上下文
+- `claim`：旧的拉模式接口，AI 端可主动来领取任务
+- `heartbeat`：领取后续租
+- `dispatch`：手动触发服务端主动补发某个任务到 AI 端
 
-### 7.6 后端回调接口
+### 9.6 AI 回调接口
 
-#### 模型答案回调
+- `POST /api/v1/callbacks/model-answer`
+- `POST /api/v1/callbacks/model-failure`
 
-`POST /api/v1/callbacks/model-answer`
+说明：
 
-支持：
+- 支持文本答案、多模态资产、学习路径结构化入库
+- 重答任务回调时可覆盖旧答案
 
-- 文本答案存储
-- 多模态资产存储，如图片、思维导图、文件等
-- 答案与任务绑定
-- 反馈重答时覆盖旧答案
-- 当 `meta_json.learning_path` 存在时，自动写入学习路径和节点
-
-#### 模型失败回调
-
-`POST /api/v1/callbacks/model-failure`
-
-用于将任务标记为失败，并记录错误信息。
-
-### 7.7 学习路径接口
-
-当前已支持如下接口：
+### 9.7 学习路径接口
 
 - `GET /api/v1/learning-paths/conversations/{conversation_id}/current`
 - `GET /api/v1/learning-paths/{path_id}`
@@ -331,85 +285,66 @@ D:\aigc
 - `GET /api/v1/learning-paths/{path_id}/progress`
 - `GET /api/v1/learning-paths/conversations/{conversation_id}/events`
 
-用途说明：
+## 10. 本次改进总结
 
-- 获取某个会话当前的学习路径
-- 查询学习路径中的所有节点
-- 更新节点状态，如 `locked / available / in_progress / done`
-- 记录用户每日打卡
-- 汇总整体学习进度
-- 查看会话中的学习行为事件时间线
+本次围绕“服务端主动发送任务给 AI 端”做了这些调整：
 
-## 8. 冒烟测试脚本
+1. 新增主动分发器  
+文件：[ai_dispatcher.py](/D:/aigc/app/core/ai_dispatcher.py)  
+作用：任务创建后自动推送到 AI 服务。
 
-可以使用以下脚本快速验证功能是否正常：
+2. 新增结果处理服务  
+文件：[task_result_service.py](/D:/aigc/app/core/task_result_service.py)  
+作用：统一处理答案入库与失败入库，供回调接口和主动推送共用。
 
-- `python scripts/phase1_smoke_test.py`
-- `python scripts/phase2_smoke_test.py`
-- `python scripts/phase3_smoke_test.py`
+3. 提问与重答自动触发推送  
+文件：[messages.py](/D:/aigc/app/api/routes/messages.py)  
+作用：前端提交问题、反馈重答后，服务端自动异步分发。
+
+4. 增加手动补发接口  
+文件：[backend.py](/D:/aigc/app/api/routes/backend.py)  
+作用：当 AI 服务恢复后，可以手动重新推送某条任务。
+
+5. 保留旧的领取模式  
+文件：[backend.py](/D:/aigc/app/api/routes/backend.py)  
+作用：确保旧 AI Worker 仍可继续工作，平滑迁移。
+
+## 11. 联调脚本
+
+建议使用以下脚本：
+
 - `python scripts/frontend_flow_smoke_test.py`
-- `python scripts/backend_claim_flow_smoke_test.py`
-- `python scripts/feedback_regenerate_overwrite_smoke_test.py`
 - `python scripts/task_result_polling_smoke_test.py`
 - `python scripts/learning_path_flow_smoke_test.py`
-- `python scripts/runner_mock_flow_smoke_test.py`
+- `python scripts/ai_bridge_local_smoke_test.py`
 
-## 9. 性能测试脚本
+说明：
 
-前端 JSON 写入链路压测：
+- `ai_bridge_local_smoke_test.py` 现在用于验证“服务端主动推送 -> AI 服务 -> 回写结果”整条链路
+- `ai_bridge_worker_once.py` 仍可作为旧拉模式桥接脚本保留
 
-```bash
-python scripts/perf_frontend_json_flow.py --requests 500 --concurrency 50 --conversation-shards 50
-```
+## 12. 常见问题
 
-后端 JSON 回调链路压测：
+### 12.1 为什么任务创建了，但 AI 没有立刻处理？
 
-```bash
-python scripts/perf_backend_json_flow.py --requests 500 --concurrency 50 --conversation-shards 50
-```
+请优先检查：
 
-如果启用了内部回调令牌，可加上：
+- `.env` 中是否配置了 `AI_SERVICE_PROCESS_URL`
+- AI 服务是否在对应地址启动
+- 如果 AI 服务要求内部令牌，`AI_SERVICE_TOKEN` 是否正确
 
-```bash
-python scripts/perf_backend_json_flow.py --internal-token your_token_here
-```
+如果主动推送失败：
 
-脚本会输出：
+- 任务会保留在数据库中
+- 你可以继续让 AI 端使用 `claim` 模式领取
+- 或手动调用 `POST /api/v1/backend/tasks/{task_id}/dispatch` 重新补发
 
-- 总请求数
-- 成功数 / 失败数
-- 总耗时
-- 吞吐量 `RPS`
-- 平均延迟
-- `P95` 延迟
+### 12.2 项目里是否保留了创建数据库的代码？
 
-## 10. 常见问题
+有，主要在：
 
-### 10.1 中文变成 `????`
+- [init_db.py](/D:/aigc/scripts/init_db.py)
+- [upgrade_phase2.py](/D:/aigc/scripts/upgrade_phase2.py)
 
-如果 MySQL 中中文内容显示异常，可以执行：
+本 README 里也保留了纯 SQL 的建库语句。
 
-```sql
-source scripts/fix_mysql_utf8mb4.sql;
-```
-
-如果只是 PowerShell 手动请求时出现乱码，建议：
-
-- 在 JSON 中使用 Unicode 转义，如 `\u8bf7`
-- 或直接运行项目自带的冒烟测试脚本进行验证
-
-### 10.2 服务端启动了，但脚本连不上
-
-请确认：
-
-- `uvicorn app.main:app --reload` 已经在运行
-- 地址是否为 `http://127.0.0.1:8000`
-- 本地防火墙或端口占用没有阻塞
-
-### 10.3 项目里是否留了创建数据库的代码
-
-有，分为两部分：
-
-- 纯 SQL 建库语句在本 README 的“环境要求”部分
-- 表结构创建与 demo 用户初始化脚本在 [init_db.py](/D:/aigc/scripts/init_db.py)
-- 数据库结构补丁与升级脚本在 [upgrade_phase2.py](/D:/aigc/scripts/upgrade_phase2.py)

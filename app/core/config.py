@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     token_algorithm: str = "HS256"
     backend_callback_token: str | None = None
     backend_task_lease_seconds: int = 300
+    ai_service_process_url: str | None = None
+    ai_service_token: str | None = None
+    ai_service_timeout_seconds: int = 120
+    ai_service_model_name: str | None = "local-ai-service"
     database_url: str = (
         "mysql+pymysql://root:123456@127.0.0.1:3306/learning_app?charset=utf8mb4"
     )

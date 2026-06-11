@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.internal_auth import verify_internal_token
+from app.core.ai_dispatcher import dispatch_task_async
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.response import ok
@@ -193,3 +194,28 @@ def heartbeat_task(
     db.commit()
     db.refresh(task)
     return ok(GenerationTaskOut.model_validate(task).model_dump(), "Lease extended")
+
+
+@router.post("/tasks/{task_id}/dispatch")
+def dispatch_task_to_ai(
+    task_id: int,
+    _token_guard: None = Depends(verify_internal_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    task = db.get(GenerationTask, task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+    queued = dispatch_task_async(task_id)
+    if not queued:
+        return ok(
+            {
+                "task_id": task_id,
+                "queued": False,
+                "reason": "AI_SERVICE_PROCESS_URL is not configured",
+            },
+            "Active dispatch is disabled",
+        )
+    return ok({"task_id": task_id, "queued": True}, "Task dispatch queued")

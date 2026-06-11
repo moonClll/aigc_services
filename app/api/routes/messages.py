@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.serializers import serialize_single_message
+from app.core.ai_dispatcher import dispatch_task_async
 from app.core.database import get_db
 from app.core.response import ok
 from app.models import (
@@ -92,6 +93,7 @@ def submit_question(
     db.commit()
     db.refresh(message)
     db.refresh(task)
+    dispatch_task_async(task.id)
 
     data = serialize_single_message(db, message)
     data["generation_task_id"] = task.id
@@ -177,6 +179,8 @@ def submit_feedback(
 
     db.commit()
     db.refresh(feedback)
+    if regenerate_task_id is not None:
+        dispatch_task_async(regenerate_task_id)
 
     data = MessageFeedbackOut.model_validate(feedback).model_dump()
     data["regenerate_task_id"] = regenerate_task_id
