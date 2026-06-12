@@ -132,7 +132,7 @@ uvicorn app.main:app --reload
 - 新模式适合“服务端主动把任务发给 AI 端”
 - 旧模式适合“AI 端自己定时拉取任务”
 
-两种模式现在是兼容共存的。
+两种模式兼容。
 
 ## 8. 项目文件组织架构
 
@@ -285,9 +285,9 @@ D:\aigc
 - `GET /api/v1/learning-paths/{path_id}/progress`
 - `GET /api/v1/learning-paths/conversations/{conversation_id}/events`
 
-## 10. 本次改进总结
+## 10. 本次改进2026.6.11
 
-本次围绕“服务端主动发送任务给 AI 端”做了这些调整：
+服务端主动发送任务给 AI 端：
 
 1. 新增主动分发器  
 文件：[ai_dispatcher.py](/D:/aigc/app/core/ai_dispatcher.py)  
@@ -311,7 +311,7 @@ D:\aigc
 
 ## 11. 联调脚本
 
-建议使用以下脚本：
+使用以下脚本：
 
 - `python scripts/frontend_flow_smoke_test.py`
 - `python scripts/task_result_polling_smoke_test.py`
@@ -325,9 +325,9 @@ D:\aigc
 
 ## 12. 常见问题
 
-### 12.1 为什么任务创建了，但 AI 没有立刻处理？
+### 12.1 任务创建了，但 AI 没有立刻处理
 
-请优先检查：
+检查：
 
 - `.env` 中是否配置了 `AI_SERVICE_PROCESS_URL`
 - AI 服务是否在对应地址启动
@@ -336,15 +336,13 @@ D:\aigc
 如果主动推送失败：
 
 - 任务会保留在数据库中
-- 你可以继续让 AI 端使用 `claim` 模式领取
+- 继续让 AI 端使用 `claim` 模式领取
 - 或手动调用 `POST /api/v1/backend/tasks/{task_id}/dispatch` 重新补发
 
-### 12.2 项目里是否保留了创建数据库的代码？
+### 12.2 创建数据库的代码
 
-有，主要在：
 
 - [init_db.py](/D:/aigc/scripts/init_db.py)
 - [upgrade_phase2.py](/D:/aigc/scripts/upgrade_phase2.py)
 
-本 README 里也保留了纯 SQL 的建库语句。
 
